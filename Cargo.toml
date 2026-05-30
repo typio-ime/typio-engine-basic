@@ -10,7 +10,7 @@ libc = "0.2"
 typio-abi = { path = "../libtypio/crates/abi" }
 
 [dev-dependencies]
-typio-devlint = { path = "../typio-devlint" }
+typio-vet = { path = "../typio-vet" }
 
 [lib]
 name = "typio_engine_basic"

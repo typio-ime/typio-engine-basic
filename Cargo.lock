@@ -22,19 +22,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "typio-devlint"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "libc",
- "typio-abi",
-]
-
-[[package]]
 name = "typio-engine-basic"
 version = "0.0.1"
 dependencies = [
  "libc",
  "typio-abi",
- "typio-devlint",
+ "typio-vet",
+]
+
+[[package]]
+name = "typio-vet"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "libc",
+ "typio-abi",
 ]

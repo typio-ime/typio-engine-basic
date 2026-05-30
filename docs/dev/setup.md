@@ -6,43 +6,13 @@ How to prepare your machine to build, test, and modify `typio-engine-basic`.
 
 | Tool | Minimum version | Purpose |
 |------|-----------------|---------|
-| Rust | stable (edition 2021) | Compiles the engine. |
+| [Rust](https://rustup.rs/) | stable (edition 2021) | Compiles the engine. |
 | cargo | bundled with Rust | Dependency resolution and build orchestration. |
 | gcc / clang | any recent | C compiler for linking the `cdylib`. |
 | strip | binutils | Optional — for removing debug symbols from release builds. |
 | nm | binutils | Optional — for inspecting exported symbols. |
 
-## Repository layout
-
-`typio-engine-basic` depends on crates that live outside its own directory. Clone the full Typio source tree so the relative paths in `Cargo.toml` resolve correctly:
-
-```
-typio-project/
-├── libtypio/
-│   └── crates/
-│       └── abi/              <-- typio-abi dependency
-├── typio-devlint/            <-- dev-dependency (linting)
-├── typio-engine-test/        <-- dev-dependency (test harness)
-└── typio-engine-basic/       <-- this crate
-```
-
-If your organisation keeps these in separate repositories, ensure they are checked out as siblings on disk.
-
-## Install Rust
-
-If you do not have Rust installed:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-```
-
-Verify:
-
-```bash
-rustc --version   # e.g. rustc 1.80.0
-cargo --version   # e.g. cargo 1.80.0
-```
+> **Repository layout note:** `typio-engine-basic` has path dependencies on sibling directories (`../libtypio/crates/abi`, `../typio-vet`). Clone the full Typio source tree, or ensure those repos are checked out as siblings on disk, otherwise `cargo` will fail to resolve dependencies.
 
 ## Clone and enter the repository
 
@@ -59,6 +29,76 @@ cargo check
 
 If this succeeds, the relative paths to `typio-abi` and other workspace crates are correct.
 
+---
+
+## Build
+
+### Development build
+
+Compile with debug symbols and no optimisation for fast compile times:
+
+```bash
+cargo build
+```
+
+Artifact: `target/debug/libtypio_engine_basic.so`
+
+### Production build
+
+Compile an optimised release artifact:
+
+```bash
+cargo build --release
+```
+
+Artifact: `target/release/libtypio_engine_basic.so`
+
+---
+
+## Apply / Install
+
+The exact destination depends on the Typio host’s engine search path (often `TYPIO_ENGINE_PATH` or a default such as `/usr/local/lib/typio/engines`).
+
+### Development (quick iteration)
+
+Copy the debug `.so` into the user-level engine directory (re-copy after each build, or use `ln -sf` if you want it to auto-update):
+
+```bash
+mkdir -p ~/.local/share/typio/engines
+cp target/debug/libtypio_engine_basic.so \
+    ~/.local/share/typio/engines/
+```
+
+Copy the brand icon into your user icon directory:
+
+```bash
+mkdir -p ~/.local/share/icons/hicolor/symbolic/apps
+cp data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg \
+    ~/.local/share/icons/hicolor/symbolic/apps/
+```
+
+### Production
+
+Copy the release `.so` and icon to system directories:
+
+```bash
+# Engine library
+mkdir -p /usr/local/lib/typio/engines
+cp target/release/libtypio_engine_basic.so \
+    /usr/local/lib/typio/engines/
+chmod 755 /usr/local/lib/typio/engines/libtypio_engine_basic.so
+
+# Brand icon
+mkdir -p /usr/share/icons/hicolor/symbolic/apps
+cp data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg \
+    /usr/share/icons/hicolor/symbolic/apps/
+chmod 644 /usr/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
+```
+
+Run `ldconfig` if the host loader does not already scan `/usr/local/lib/typio/engines`.
+
+---
+
 ## Optional: configure your editor
 
 ### rust-analyzer
@@ -67,7 +107,7 @@ Most editors with LSP support work out of the box. Ensure `rust-analyzer` is ins
 
 ### Clippy
 
-The project uses `typio-devlint` for consistent linting. Run Clippy manually:
+The project uses `typio-vet` to vet the engine against the ABI contract. Run Clippy manually:
 
 ```bash
 cargo clippy
