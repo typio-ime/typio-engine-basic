@@ -384,11 +384,11 @@ extern "C" fn basic_process_key(
     }
 }
 
-extern "C" fn basic_get_mode(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioEngineMode {
+extern "C" fn basic_get_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioEngineStatus {
     ptr::null()
 }
 
-extern "C" fn basic_set_mode(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext, _mode_id: *const c_char) -> TypioResult {
+extern "C" fn basic_set_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext, _mode_id: *const c_char) -> TypioResult {
     TypioResult::TypioOk
 }
 
@@ -415,12 +415,11 @@ static BASIC_BASE_OPS: TypioEngineBaseOps = TypioEngineBaseOps {
 
 static BASIC_KEYBOARD_OPS: TypioKeyboardEngineOps = TypioKeyboardEngineOps {
     process_key: Some(basic_process_key),
-    get_mode: Some(basic_get_mode),
-    set_mode: Some(basic_set_mode),
+    get_status: Some(basic_get_status),
+    set_status: Some(basic_set_status),
 };
 
 static BASIC_ENGINE_INFO: TypioEngineInfo = TypioEngineInfo {
-    struct_size: std::mem::size_of::<TypioEngineInfo>(),
     name: c"basic".as_ptr(),
     display_name: c"Basic".as_ptr(),
     description: c"Built-in basic keyboard engine that commits printable text directly.".as_ptr(),
@@ -572,13 +571,13 @@ mod tests {
 
 /// Integration tests using the shared typio-engine-test harness.
 ///
-/// Best practice: import ABI types from `typio-engine-test` instead of
-/// replicating them inline. The casts below are required because the
-/// keyboard process_key callback takes `*const c_void` per the ABI.
+/// Best practice: import ABI types from `typio-vet` instead of replicating
+/// them inline. The casts below are required because the keyboard process_key
+/// callback takes `*const c_void` per the ABI.
 #[cfg(test)]
 mod harness_tests {
     use super::*;
-    use typio_engine_test::{mock_context, mock_instance, ContextEvent};
+    use typio_vet::{mock_context, mock_instance, ContextEvent};
 
     fn key_press(unicode: char) -> TypioKeyEvent {
         TypioKeyEvent {
@@ -674,7 +673,7 @@ mod harness_tests {
         let mut config = std::collections::HashMap::new();
         config.insert(
             "engines.basic.compose".to_string(),
-            typio_engine_test::ConfigValue::Bool(true),
+            typio_vet::ConfigValue::Bool(true),
         );
 
         let (ctx, log) = mock_context();
