@@ -40,16 +40,16 @@ Artifact: `target/release/libtypio_engine_basic.so`
 
 ## Apply / Install
 
-The exact destination depends on the Typio host’s engine search path (often `TYPIO_ENGINE_PATH` or a default such as `/usr/local/lib/typio/engines`).
+The exact destination depends on the Typio host’s engine search path (often `TYPIO_ENGINE_PATH` or defaults such as `~/.local/lib/typio/engines` for user-level, `/usr/local/lib/typio/engines` for system-wide).
 
 ### Development (quick iteration)
 
 Copy the debug `.so` into the user-level engine directory (re-copy after each build, or use `ln -sf` if you want it to auto-update):
 
 ```bash
-mkdir -p ~/.local/share/typio/engines
+mkdir -p ~/.local/lib/typio/engines
 cp target/debug/libtypio_engine_basic.so \
-    ~/.local/share/typio/engines/
+    ~/.local/lib/typio/engines/
 ```
 
 Copy the brand icon into your user icon directory:
