@@ -14,23 +14,6 @@ How to prepare your machine to build, test, and modify `typio-engine-basic`.
 
 > **Repository layout note:** `typio-engine-basic` has path dependencies on sibling directories (`../libtypio/crates/abi`, `../typio-vet`). Clone the full Typio source tree, or ensure those repos are checked out as siblings on disk, otherwise `cargo` will fail to resolve dependencies.
 
-## Clone and enter the repository
-
-```bash
-cd /path/to/typio-project
-cd typio-engine-basic
-```
-
-## Verify dependencies resolve
-
-```bash
-cargo check
-```
-
-If this succeeds, the relative paths to `typio-abi` and other workspace crates are correct.
-
----
-
 ## Build
 
 ### Development build

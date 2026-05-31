@@ -1,5 +1,8 @@
 /target/
 
+# AI
+.claude/
+
 # Editor
 *.swp
 *.swo
