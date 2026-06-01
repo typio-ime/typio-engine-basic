@@ -384,7 +384,7 @@ extern "C" fn basic_process_key(
     }
 }
 
-extern "C" fn basic_get_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioEngineStatus {
+extern "C" fn basic_get_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioKeyboardEngineStatus {
     ptr::null()
 }
 
