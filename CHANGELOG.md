@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-06-02
+
+### Changed
+
+- **Adopted granular `host_managed_selection` flags (ADR-0012).**
+  The compose picker now sets
+  `TYPIO_HOST_SEL_NAVIGATE | TYPIO_HOST_SEL_COMMIT` instead of the old
+  blanket `true`. Digits and space are no longer intercepted by the host
+  and can be used as compose trigger characters (e.g. `^1` → `¹`).
+- Removed dead code: `select_up`, `select_down`, and the
+  `picker_navigation` test that exercised engine-side navigation no longer
+  needed because arrow keys are host-managed.
+
 ## [0.1.0] - 2026-06-02
 
 ### Changed

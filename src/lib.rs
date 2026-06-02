@@ -185,19 +185,6 @@ impl ComposePicker {
         true
     }
 
-    fn select_up(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
-        }
-    }
-
-    fn select_down(&mut self) {
-        let max = self.candidates.len() as i32 - 1;
-        if self.selected < max {
-            self.selected += 1;
-        }
-    }
-
     fn get_selected_result(&self) -> Option<&ComposeCandidate> {
         if self.selected >= 0 && (self.selected as usize) < self.candidates.len() {
             Some(&self.candidates[self.selected as usize])
@@ -530,7 +517,8 @@ fn picker_update_composition(
         has_next: false,
         content_signature: 0,
         revision: 0,
-        host_managed_selection: true,
+        host_managed_selection: (TypioHostManagedSelection::TypioHostSelNavigate as u32)
+            | (TypioHostManagedSelection::TypioHostSelCommit as u32),
     };
 
     unsafe { typio_input_context_set_composition(ctx, &comp) };
@@ -697,30 +685,6 @@ mod tests {
         picker.search();
         assert!(picker.candidates.iter().any(|c| c.result_char == "°"));
         assert!(picker.candidates.iter().any(|c| c.result_char == "œ"));
-    }
-
-    #[test]
-    fn picker_navigation() {
-        let mut picker = ComposePicker::new();
-        picker.buffer.push('\'');
-        picker.search();
-        assert!(picker.candidates.len() > 1);
-        assert_eq!(picker.selected, 0);
-
-        picker.select_down();
-        assert_eq!(picker.selected, 1);
-
-        picker.select_up();
-        assert_eq!(picker.selected, 0);
-
-        picker.select_up();
-        assert_eq!(picker.selected, 0);
-
-        let max = picker.candidates.len() as i32 - 1;
-        for _ in 0..max + 5 {
-            picker.select_down();
-        }
-        assert_eq!(picker.selected, max);
     }
 
     #[test]
