@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-06-02
+
+### Changed
+
+- **Adopt `COMMIT_RAW` flag and exclude Space/Enter from preedit input.**
+  The compose picker now sets `NAVIGATE | COMMIT | COMMIT_RAW` so that
+  Space commits the selected candidate (host-managed) and Enter commits
+  the raw preedit buffer (also host-managed). `picker_process_key` no
+  longer swallows Space as a printable character, letting the host
+  intercept it correctly.
+
 ## [0.1.1] - 2026-06-02
 
 ### Changed

@@ -462,6 +462,13 @@ fn picker_process_key(
         return TypioKeyProcessResult::TypioKeyHandled;
     }
 
+    /* Space and Enter are host-managed selection keys; do not swallow them
+     * as preedit input so the host can commit the selected candidate (Space)
+     * or the raw preedit text (Enter). */
+    if keysym == TYPIO_KEY_space || keysym == TYPIO_KEY_Return || keysym == TYPIO_KEY_KP_Enter {
+        return TypioKeyProcessResult::TypioKeyNotHandled;
+    }
+
     if codepoint >= 0x20 && codepoint != 0x7F {
         data.picker.append_char(codepoint);
         picker_update_composition(data, ctx);
@@ -518,7 +525,8 @@ fn picker_update_composition(
         content_signature: 0,
         revision: 0,
         host_managed_selection: (TypioHostManagedSelection::TypioHostSelNavigate as u32)
-            | (TypioHostManagedSelection::TypioHostSelCommit as u32),
+            | (TypioHostManagedSelection::TypioHostSelCommit as u32)
+            | (TypioHostManagedSelection::TypioHostSelCommitRaw as u32),
     };
 
     unsafe { typio_input_context_set_composition(ctx, &comp) };
