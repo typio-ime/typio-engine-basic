@@ -1,7 +1,8 @@
 //! Typio Basic Engine — standalone keyboard engine plugin.
 //!
-//! Implements a zero-dependency fallback engine that commits printable Unicode
-//! text directly, with optional two-key compose sequences for accented chars.
+//! Single "compose" mode with Active engagement. All printable keys commit
+//! directly unless Shift+Alt opens the compose picker: type a base key (e.g.
+//! 'a') and pick from candidate list of related Latin characters (á à â ä ã …).
 //!
 //! Exported C ABI:
 //!   - typio_engine_get_info
@@ -13,10 +14,9 @@ use std::ptr;
 use typio_abi::*;
 
 /* -------------------------------------------------------------------------- */
-/* ABI version (not yet in typio-abi crate)                                   */
+/* ABI version                                                                */
 /* -------------------------------------------------------------------------- */
 
-/// Mirror of `TypioAbiVersion` from `typio/abi/types.h`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct TypioAbiVersion {
@@ -24,7 +24,6 @@ pub struct TypioAbiVersion {
     pub minor: u16,
 }
 
-/// ABI version this engine was built against — must match the host.
 pub const TYPIO_ENGINE_ABI_MAJOR: u16 = 0;
 pub const TYPIO_ENGINE_ABI_MINOR: u16 = 1;
 
@@ -41,84 +40,14 @@ extern "C" {
     fn typio_input_context_commit(ctx: *mut TypioInputContext, text: *const c_char);
     fn typio_input_context_clear(ctx: *mut TypioInputContext);
     fn typio_input_context_set_composition(ctx: *mut TypioInputContext, comp: *const TypioComposition);
-    fn typio_key_event_is_modifier_only(event: *const TypioKeyEvent) -> bool;
     fn typio_key_event_is_escape(event: *const TypioKeyEvent) -> bool;
-    fn typio_instance_get_config(instance: *mut TypioInstance) -> *mut c_void;
-    fn typio_config_get_bool(config: *mut c_void, key: *const c_char, default: bool) -> bool;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Compose state machine                                                      */
+/* Compose rule tables                                                        */
 /* -------------------------------------------------------------------------- */
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum ComposeResult {
-    None,
-    Consume,
-    Commit(u32),
-    Cancel(u32),
-}
-
-struct BasicCompose {
-    active: bool,
-    first: u32,
-    preedit: String,
-}
-
-impl BasicCompose {
-    fn new() -> Self {
-        Self {
-            active: false,
-            first: 0,
-            preedit: String::new(),
-        }
-    }
-
-    fn process_key(&mut self, codepoint: u32) -> ComposeResult {
-        if !self.active {
-            if can_start_compose(codepoint) {
-                self.active = true;
-                self.first = codepoint;
-                self.preedit = encode_utf8_to_string(codepoint);
-                return ComposeResult::Consume;
-            }
-            return ComposeResult::None;
-        }
-
-        self.active = false;
-        if let Some(result) = find_rule(self.first, codepoint) {
-            return ComposeResult::Commit(result);
-        }
-        ComposeResult::Cancel(self.first)
-    }
-
-    fn get_preedit(&self) -> Option<&str> {
-        if self.active { Some(&self.preedit) } else { None }
-    }
-
-    fn cancel(&mut self) -> Option<u32> {
-        if self.active {
-            let cp = self.first;
-            self.active = false;
-            Some(cp)
-        } else {
-            None
-        }
-    }
-
-    fn reset(&mut self) {
-        self.active = false;
-        self.first = 0;
-        self.preedit.clear();
-    }
-
-    fn is_active(&self) -> bool {
-        self.active
-    }
-}
 
 const COMPOSE_RULES: &[(u32, u32, u32)] = &[
-    // Acute accent (')
     (b'\'' as u32, b'A' as u32, 0x00C1), (b'\'' as u32, b'C' as u32, 0x0106),
     (b'\'' as u32, b'E' as u32, 0x00C9), (b'\'' as u32, b'G' as u32, 0x01F4),
     (b'\'' as u32, b'I' as u32, 0x00CD), (b'\'' as u32, b'L' as u32, 0x0139),
@@ -134,38 +63,31 @@ const COMPOSE_RULES: &[(u32, u32, u32)] = &[
     (b'\'' as u32, b'p' as u32, 0x1E55), (b'\'' as u32, b'r' as u32, 0x0155),
     (b'\'' as u32, b's' as u32, 0x015B), (b'\'' as u32, b'u' as u32, 0x00FA),
     (b'\'' as u32, b'y' as u32, 0x00FD), (b'\'' as u32, b'z' as u32, 0x017A),
-    // Grave accent (`)
     (b'`' as u32, b'A' as u32, 0x00C0), (b'`' as u32, b'E' as u32, 0x00C8),
     (b'`' as u32, b'I' as u32, 0x00CC), (b'`' as u32, b'O' as u32, 0x00D2),
     (b'`' as u32, b'U' as u32, 0x00D9),
     (b'`' as u32, b'a' as u32, 0x00E0), (b'`' as u32, b'e' as u32, 0x00E8),
     (b'`' as u32, b'i' as u32, 0x00EC), (b'`' as u32, b'o' as u32, 0x00F2),
     (b'`' as u32, b'u' as u32, 0x00F9),
-    // Circumflex (^)
     (b'^' as u32, b'A' as u32, 0x00C2), (b'^' as u32, b'E' as u32, 0x00CA),
     (b'^' as u32, b'I' as u32, 0x00CE), (b'^' as u32, b'O' as u32, 0x00D4),
     (b'^' as u32, b'U' as u32, 0x00DB),
     (b'^' as u32, b'a' as u32, 0x00E2), (b'^' as u32, b'e' as u32, 0x00EA),
     (b'^' as u32, b'i' as u32, 0x00EE), (b'^' as u32, b'o' as u32, 0x00F4),
     (b'^' as u32, b'u' as u32, 0x00FB),
-    // Diaeresis/umlaut (")
     (b'"' as u32, b'A' as u32, 0x00C4), (b'"' as u32, b'E' as u32, 0x00CB),
     (b'"' as u32, b'I' as u32, 0x00CF), (b'"' as u32, b'O' as u32, 0x00D6),
     (b'"' as u32, b'U' as u32, 0x00DC), (b'"' as u32, b'Y' as u32, 0x0178),
     (b'"' as u32, b'a' as u32, 0x00E4), (b'"' as u32, b'e' as u32, 0x00EB),
     (b'"' as u32, b'i' as u32, 0x00EF), (b'"' as u32, b'o' as u32, 0x00F6),
     (b'"' as u32, b'u' as u32, 0x00FC), (b'"' as u32, b'y' as u32, 0x00FF),
-    // Tilde (~)
     (b'~' as u32, b'A' as u32, 0x00C3), (b'~' as u32, b'N' as u32, 0x00D1),
     (b'~' as u32, b'O' as u32, 0x00D5),
     (b'~' as u32, b'a' as u32, 0x00E3), (b'~' as u32, b'n' as u32, 0x00F1),
     (b'~' as u32, b'o' as u32, 0x00F5),
-    // Cedilla (,)
     (b',' as u32, b'C' as u32, 0x00C7), (b',' as u32, b'c' as u32, 0x00E7),
-    // Slash (/)
     (b'/' as u32, b'L' as u32, 0x0141), (b'/' as u32, b'O' as u32, 0x00D8),
     (b'/' as u32, b'l' as u32, 0x0142), (b'/' as u32, b'o' as u32, 0x00F8),
-    // Special punctuation
     (b'?' as u32, b'?' as u32, 0x00BF), (b'!' as u32, b'!' as u32, 0x00A1),
     (b'<' as u32, b'<' as u32, 0x00AB), (b'>' as u32, b'>' as u32, 0x00BB),
     (b'\'' as u32, b'\'' as u32, 0x0027), (b'`' as u32, b'`' as u32, 0x0060),
@@ -173,25 +95,26 @@ const COMPOSE_RULES: &[(u32, u32, u32)] = &[
     (b'~' as u32, b'~' as u32, 0x007E), (b',' as u32, b',' as u32, 0x002C),
     (b'-' as u32, b'-' as u32, 0x2013), (b'-' as u32, b'=' as u32, 0x2014),
     (b'.' as u32, b'.' as u32, 0x2026),
+    (b'~' as u32, b'=' as u32, 0x2248),
+    (b'!' as u32, b'=' as u32, 0x2260),
+    (b'<' as u32, b'=' as u32, 0x2264),
+    (b'>' as u32, b'=' as u32, 0x2265),
+    (b'-' as u32, b'+' as u32, 0x2213),
+    (b'^' as u32, b'1' as u32, 0x00B9),
+    (b'^' as u32, b'2' as u32, 0x00B2),
+    (b'^' as u32, b'3' as u32, 0x00B3),
+    (b'+' as u32, b'-' as u32, 0x00B1),
+    (b'=' as u32, b'=' as u32, 0x2261),
+    (b'*' as u32, b'*' as u32, 0x00D7),
+    (b'o' as u32, b'o' as u32, 0x00B0),
+    (b'O' as u32, b'O' as u32, 0x00B0),
+    (b's' as u32, b's' as u32, 0x00DF),
+    (b'S' as u32, b'S' as u32, 0x1E9E),
+    (b'a' as u32, b'e' as u32, 0x00E6),
+    (b'o' as u32, b'e' as u32, 0x0153),
+    (b'A' as u32, b'E' as u32, 0x00C6),
+    (b'O' as u32, b'E' as u32, 0x0152),
 ];
-
-fn find_rule(first: u32, second: u32) -> Option<u32> {
-    for &(f, s, r) in COMPOSE_RULES {
-        if f == first && s == second {
-            return Some(r);
-        }
-    }
-    None
-}
-
-fn can_start_compose(codepoint: u32) -> bool {
-    for &(f, _, _) in COMPOSE_RULES {
-        if f == codepoint {
-            return true;
-        }
-    }
-    false
-}
 
 fn encode_utf8_to_string(codepoint: u32) -> String {
     let mut buf = [0u8; 4];
@@ -201,39 +124,150 @@ fn encode_utf8_to_string(codepoint: u32) -> String {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Compose picker state machine                                               */
+/* -------------------------------------------------------------------------- */
+
+struct ComposeCandidate {
+    result_char: String,
+}
+
+struct ComposePicker {
+    active: bool,
+    buffer: String,
+    candidates: Vec<ComposeCandidate>,
+    selected: i32,
+}
+
+#[allow(dead_code)]
+impl ComposePicker {
+    fn new() -> Self {
+        Self {
+            active: false,
+            buffer: String::new(),
+            candidates: Vec::new(),
+            selected: -1,
+        }
+    }
+
+    fn activate(&mut self) {
+        self.active = true;
+        self.buffer.clear();
+        self.candidates.clear();
+        self.selected = -1;
+    }
+
+    fn deactivate(&mut self) {
+        self.active = false;
+        self.buffer.clear();
+        self.candidates.clear();
+        self.selected = -1;
+    }
+
+    fn is_active(&self) -> bool {
+        self.active
+    }
+
+    fn append_char(&mut self, codepoint: u32) {
+        if self.buffer.chars().count() >= 2 {
+            return;
+        }
+        let ch = char::from_u32(codepoint).unwrap_or('\u{FFFD}');
+        self.buffer.push(ch);
+        self.search();
+    }
+
+    fn backspace(&mut self) -> bool {
+        if self.buffer.is_empty() {
+            return false;
+        }
+        self.buffer.pop();
+        self.search();
+        true
+    }
+
+    fn select_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    fn select_down(&mut self) {
+        let max = self.candidates.len() as i32 - 1;
+        if self.selected < max {
+            self.selected += 1;
+        }
+    }
+
+    fn get_selected_result(&self) -> Option<&ComposeCandidate> {
+        if self.selected >= 0 && (self.selected as usize) < self.candidates.len() {
+            Some(&self.candidates[self.selected as usize])
+        } else {
+            None
+        }
+    }
+
+    fn search(&mut self) {
+        self.candidates.clear();
+        self.selected = -1;
+        let chars: Vec<u32> = self.buffer.chars().map(|c| c as u32).collect();
+        match chars.len() {
+            1 => self.search_by_base(chars[0]),
+            2 => self.search_exact(chars[0], chars[1]),
+            _ => {}
+        }
+        if !self.candidates.is_empty() {
+            self.selected = 0;
+        }
+    }
+
+    fn search_by_base(&mut self, cp: u32) {
+        for &(f, s, r) in COMPOSE_RULES {
+            if f == cp || s == cp {
+                self.push_candidate(f, s, r);
+            }
+        }
+    }
+
+    fn search_exact(&mut self, first: u32, second: u32) {
+        for &(f, s, r) in COMPOSE_RULES {
+            if f == first && s == second {
+                self.push_candidate(f, s, r);
+            }
+        }
+    }
+
+    fn push_candidate(&mut self, _f: u32, _s: u32, r: u32) {
+        self.candidates.push(ComposeCandidate {
+            result_char: encode_utf8_to_string(r),
+        });
+    }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Engine per-instance data                                                   */
 /* -------------------------------------------------------------------------- */
 
 struct BasicEngineData {
-    compose: BasicCompose,
-    compose_enabled: bool,
+    picker: ComposePicker,
+    picker_text_cache: Vec<CString>,
+    shift_chord_pending: bool,
 }
 
 /* -------------------------------------------------------------------------- */
 /* Base ops callbacks                                                         */
 /* -------------------------------------------------------------------------- */
 
-extern "C" fn basic_init(engine: *mut TypioEngine, instance: *mut TypioInstance) -> TypioResult {
+extern "C" fn basic_init(engine: *mut TypioEngine, _instance: *mut TypioInstance) -> TypioResult {
     if engine.is_null() {
         return TypioResult::TypioErrorInvalidArgument;
     }
     let data = Box::new(BasicEngineData {
-        compose: BasicCompose::new(),
-        compose_enabled: false,
+        picker: ComposePicker::new(),
+        picker_text_cache: Vec::new(),
+        shift_chord_pending: false,
     });
     unsafe {
         (*engine).user_data = Box::into_raw(data) as *mut c_void;
-    }
-    if !instance.is_null() {
-        let config = unsafe { typio_instance_get_config(instance) };
-        if !config.is_null() {
-            let key = CString::new("engines.basic.compose").unwrap();
-            let val = unsafe { typio_config_get_bool(config, key.as_ptr(), false) };
-            unsafe {
-                let data = &mut *((*engine).user_data as *mut BasicEngineData);
-                data.compose_enabled = val;
-            }
-        }
     }
     TypioResult::TypioOk
 }
@@ -264,10 +298,10 @@ extern "C" fn basic_reset(engine: *mut TypioEngine, ctx: *mut TypioInputContext)
     }
     unsafe {
         let data = &mut *((*engine).user_data as *mut BasicEngineData);
-        if data.compose.is_active() && !ctx.is_null() {
+        if data.picker.is_active() && !ctx.is_null() {
             typio_input_context_clear(ctx);
         }
-        data.compose.reset();
+        data.picker.deactivate();
     }
 }
 
@@ -288,107 +322,80 @@ extern "C" fn basic_process_key(
         return TypioKeyProcessResult::TypioKeyNotHandled;
     }
     let event = unsafe { &*(event as *const TypioKeyEvent) };
-    if event.type_ != TypioEventType::TypioEventKeyPress {
-        return TypioKeyProcessResult::TypioKeyNotHandled;
-    }
-
-    if unsafe { typio_key_event_is_modifier_only(event) } || has_blocking_modifiers(event) {
-        return TypioKeyProcessResult::TypioKeyNotHandled;
-    }
-
     let base = unsafe { &mut (*engine).base };
     if base.user_data.is_null() {
         return TypioKeyProcessResult::TypioKeyNotHandled;
     }
     let data = unsafe { &mut *(base.user_data as *mut BasicEngineData) };
 
-    // Escape cancels active composition.
-    if data.compose.is_active() && unsafe { typio_key_event_is_escape(event) } {
-        data.compose.cancel();
-        unsafe { typio_input_context_clear(ctx) };
-        return TypioKeyProcessResult::TypioKeyHandled;
+    let is_shift = event.keysym == TYPIO_KEY_Shift_L || event.keysym == TYPIO_KEY_Shift_R;
+    let is_alt = event.keysym == TYPIO_KEY_Alt_L || event.keysym == TYPIO_KEY_Alt_R;
+
+    if event.type_ == TypioEventType::TypioEventKeyRelease {
+        if is_shift {
+            data.shift_chord_pending = false;
+        }
+        return TypioKeyProcessResult::TypioKeyNotHandled;
     }
 
-    let codepoint = event.unicode;
+    if event.type_ != TypioEventType::TypioEventKeyPress {
+        return TypioKeyProcessResult::TypioKeyNotHandled;
+    }
 
-    // Non-printable keys.
-    if codepoint < 0x20 || codepoint == 0x7F {
-        if data.compose.is_active() {
-            if let Some(cp) = data.compose.cancel() {
-                let text = CString::new(encode_utf8_to_string(cp)).unwrap_or_default();
+    if is_shift {
+        data.shift_chord_pending = true;
+        return TypioKeyProcessResult::TypioKeyNotHandled;
+    }
+
+    if is_alt {
+        if data.shift_chord_pending {
+            data.shift_chord_pending = false;
+            if data.picker.is_active() {
+                data.picker.deactivate();
+                data.picker_text_cache.clear();
                 unsafe { typio_input_context_clear(ctx) };
-                unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
-                return TypioKeyProcessResult::TypioKeyCommitted;
+            } else {
+                data.picker.activate();
+                picker_update_composition(data, ctx);
             }
-            unsafe { typio_input_context_clear(ctx) };
             return TypioKeyProcessResult::TypioKeyHandled;
         }
         return TypioKeyProcessResult::TypioKeyNotHandled;
     }
 
-    // Fast path: compose disabled.
-    if !data.compose_enabled {
+    data.shift_chord_pending = false;
+
+    if has_blocking_modifiers(event) {
+        return TypioKeyProcessResult::TypioKeyNotHandled;
+    }
+
+    if data.picker.is_active() {
+        return picker_process_key(data, ctx, event);
+    }
+
+    let codepoint = event.unicode;
+    if codepoint >= 0x20 && codepoint != 0x7F {
         let text = CString::new(encode_utf8_to_string(codepoint)).unwrap_or_default();
         unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
         return TypioKeyProcessResult::TypioKeyCommitted;
     }
 
-    match data.compose.process_key(codepoint) {
-        ComposeResult::None => {
-            let text = CString::new(encode_utf8_to_string(codepoint)).unwrap_or_default();
-            unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
-            TypioKeyProcessResult::TypioKeyCommitted
-        }
-        ComposeResult::Consume => {
-            if let Some(preedit) = data.compose.get_preedit() {
-                let text = CString::new(preedit).unwrap_or_default();
-                let segment = TypioPreeditSegment {
-                    text: text.as_ptr(),
-                    format: TypioPreeditFormat::TypioPreeditUnderline as u32,
-                };
-                let comp = TypioComposition {
-                    struct_size: std::mem::size_of::<TypioComposition>(),
-                    segments: &segment,
-                    segment_count: 1,
-                    cursor_pos: -1,
-                    candidates: ptr::null(),
-                    candidate_count: 0,
-                    page: 0,
-                    page_size: 0,
-                    total: 0,
-                    selected: -1,
-                    has_prev: false,
-                    has_next: false,
-                    content_signature: 0,
-                    revision: 0,
-                };
-                unsafe { typio_input_context_set_composition(ctx, &comp) };
-                std::mem::forget(text);
-            }
-            TypioKeyProcessResult::TypioKeyComposing
-        }
-        ComposeResult::Commit(result_cp) => {
-            unsafe { typio_input_context_clear(ctx) };
-            let text = CString::new(encode_utf8_to_string(result_cp)).unwrap_or_default();
-            unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
-            TypioKeyProcessResult::TypioKeyCommitted
-        }
-        ComposeResult::Cancel(flushed_cp) => {
-            unsafe { typio_input_context_clear(ctx) };
-            let text = CString::new(encode_utf8_to_string(flushed_cp)).unwrap_or_default();
-            unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
-            let text2 = CString::new(encode_utf8_to_string(codepoint)).unwrap_or_default();
-            unsafe { typio_input_context_commit(ctx, text2.as_ptr()) };
-            TypioKeyProcessResult::TypioKeyCommitted
-        }
+    TypioKeyProcessResult::TypioKeyNotHandled
+}
+
+extern "C" fn basic_list_modes(_engine: *mut TypioKeyboardEngine, count: *mut usize) -> *const TypioKeyboardEngineMode {
+    if count.is_null() {
+        return ptr::null();
     }
+    unsafe { *count = ENGINE_MODES.len() };
+    ENGINE_MODES.as_ptr()
 }
 
-extern "C" fn basic_get_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioKeyboardEngineStatus {
-    ptr::null()
+extern "C" fn basic_get_active_mode(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext) -> *const TypioKeyboardEngineMode {
+    &ENGINE_MODES[0]
 }
 
-extern "C" fn basic_set_status(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext, _mode_id: *const c_char) -> TypioResult {
+extern "C" fn basic_set_active_mode(_engine: *mut TypioKeyboardEngine, _ctx: *mut TypioInputContext, _mode_id: *const c_char) -> TypioResult {
     TypioResult::TypioOk
 }
 
@@ -396,6 +403,137 @@ fn has_blocking_modifiers(event: &TypioKeyEvent) -> bool {
     (event.modifiers & ((TypioModifier::TypioModCtrl as u32)
         | (TypioModifier::TypioModAlt as u32)
         | (TypioModifier::TypioModSuper as u32))) != 0
+}
+
+static ENGINE_MODES: [TypioKeyboardEngineMode; 1] = [
+    TypioKeyboardEngineMode {
+        id: c"compose".as_ptr(),
+        label: c"Compose".as_ptr(),
+        display_label: c"Abc".as_ptr(),
+        icon_name: ptr::null(),
+        profile_id: ptr::null(),
+        profile_label: ptr::null(),
+        description: ptr::null(),
+        salience: TypioStatusSalience::TypioStatusSalienceQuiet,
+    },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Compose picker key handling                                                */
+/* -------------------------------------------------------------------------- */
+
+extern "C" fn basic_commit_candidate(
+    engine: *mut TypioKeyboardEngine,
+    ctx: *mut TypioInputContext,
+    candidate_index: i32,
+) -> TypioResult {
+    if engine.is_null() || ctx.is_null() {
+        return TypioResult::TypioErrorInvalidArgument;
+    }
+    let base = unsafe { &mut (*engine).base };
+    if base.user_data.is_null() {
+        return TypioResult::TypioErrorInvalidArgument;
+    }
+    let data = unsafe { &mut *(base.user_data as *mut BasicEngineData) };
+
+    let idx = candidate_index as usize;
+    if idx >= data.picker.candidates.len() {
+        return TypioResult::TypioErrorInvalidArgument;
+    }
+
+    let text = CString::new(data.picker.candidates[idx].result_char.clone()).unwrap_or_default();
+    data.picker.deactivate();
+    data.picker_text_cache.clear();
+    unsafe { typio_input_context_clear(ctx) };
+    unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
+    TypioResult::TypioOk
+}
+
+fn picker_process_key(
+    data: &mut BasicEngineData,
+    ctx: *mut TypioInputContext,
+    event: &TypioKeyEvent,
+) -> TypioKeyProcessResult {
+    let keysym = event.keysym;
+    let codepoint = event.unicode;
+
+    if unsafe { typio_key_event_is_escape(event) } {
+        data.picker.deactivate();
+        data.picker_text_cache.clear();
+        unsafe { typio_input_context_clear(ctx) };
+        return TypioKeyProcessResult::TypioKeyHandled;
+    }
+
+    if keysym == TYPIO_KEY_BackSpace {
+        if data.picker.backspace() {
+            picker_update_composition(data, ctx);
+            return TypioKeyProcessResult::TypioKeyComposing;
+        }
+        data.picker.deactivate();
+        data.picker_text_cache.clear();
+        unsafe { typio_input_context_clear(ctx) };
+        return TypioKeyProcessResult::TypioKeyHandled;
+    }
+
+    if codepoint >= 0x20 && codepoint != 0x7F {
+        data.picker.append_char(codepoint);
+        picker_update_composition(data, ctx);
+        return TypioKeyProcessResult::TypioKeyComposing;
+    }
+
+    TypioKeyProcessResult::TypioKeyNotHandled
+}
+
+fn picker_update_composition(
+    data: &mut BasicEngineData,
+    ctx: *mut TypioInputContext,
+) {
+    data.picker_text_cache.clear();
+
+    let preedit_cs = CString::new(data.picker.buffer.clone()).unwrap_or_default();
+    let preedit_ptr = preedit_cs.as_ptr();
+    data.picker_text_cache.push(preedit_cs);
+
+    let cand_count = data.picker.candidates.len();
+    for cand in &data.picker.candidates {
+        let text_cs = CString::new(cand.result_char.clone()).unwrap_or_default();
+        data.picker_text_cache.push(text_cs);
+    }
+
+    let mut cand_structs: Vec<TypioCandidate> = Vec::with_capacity(cand_count);
+    for i in 0..cand_count {
+        let text_idx = 1 + i;
+        cand_structs.push(TypioCandidate {
+            text: data.picker_text_cache[text_idx].as_ptr(),
+            comment: ptr::null(),
+            label: ptr::null(),
+        });
+    }
+
+    let segment = TypioPreeditSegment {
+        text: preedit_ptr,
+        format: TypioPreeditFormat::TypioPreeditUnderline as u32,
+    };
+
+    let comp = TypioComposition {
+        struct_size: std::mem::size_of::<TypioComposition>(),
+        segments: &segment,
+        segment_count: 1,
+        cursor_pos: data.picker.buffer.len() as i32,
+        candidates: if cand_structs.is_empty() { ptr::null() } else { cand_structs.as_ptr() },
+        candidate_count: cand_count,
+        page: 0,
+        page_size: cand_count as i32,
+        total: cand_count as i32,
+        selected: data.picker.selected,
+        has_prev: false,
+        has_next: false,
+        content_signature: 0,
+        revision: 0,
+        host_managed_selection: true,
+    };
+
+    unsafe { typio_input_context_set_composition(ctx, &comp) };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -415,14 +553,16 @@ static BASIC_BASE_OPS: TypioEngineBaseOps = TypioEngineBaseOps {
 
 static BASIC_KEYBOARD_OPS: TypioKeyboardEngineOps = TypioKeyboardEngineOps {
     process_key: Some(basic_process_key),
-    get_status: Some(basic_get_status),
-    set_status: Some(basic_set_status),
+    list_modes: Some(basic_list_modes),
+    get_active_mode: Some(basic_get_active_mode),
+    set_active_mode: Some(basic_set_active_mode),
+    commit_candidate: Some(basic_commit_candidate),
 };
 
 static BASIC_ENGINE_INFO: TypioEngineInfo = TypioEngineInfo {
     name: c"basic".as_ptr(),
     display_name: c"Basic".as_ptr(),
-    description: c"Built-in basic keyboard engine that commits printable text directly.".as_ptr(),
+    description: c"Basic keyboard engine with Shift+Alt compose picker for Latin characters.".as_ptr(),
     author: c"Typio".as_ptr(),
     icon: c"typio-engine-basic".as_ptr(),
     language: c"und".as_ptr(),
@@ -468,112 +608,168 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compose_none_for_plain_key() {
-        let mut compose = BasicCompose::new();
-        assert_eq!(compose.process_key(b'a' as u32), ComposeResult::None);
-        assert!(!compose.is_active());
+    fn picker_search_base_a() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('a');
+        picker.search();
+        assert!(!picker.candidates.is_empty());
+        assert!(picker.candidates.iter().any(|c| c.result_char == "á"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "à"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "â"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ä"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ã"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "æ"));
     }
 
     #[test]
-    fn compose_consume_first_key() {
-        let mut compose = BasicCompose::new();
-        assert_eq!(compose.process_key(b'\'' as u32), ComposeResult::Consume);
-        assert!(compose.is_active());
-        assert_eq!(compose.get_preedit(), Some("'"));
+    fn picker_search_base_e() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('e');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "é"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "è"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ê"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ë"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "œ"));
     }
 
     #[test]
-    fn compose_commit_sequence() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        let result = compose.process_key(b'a' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x00E1)));
-        assert!(!compose.is_active());
+    fn picker_search_base_n() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('n');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ñ"));
     }
 
     #[test]
-    fn compose_cancel_no_match() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        let result = compose.process_key(b'x' as u32); // ' + x has no rule
-        assert_eq!(result, ComposeResult::Cancel(b'\'' as u32));
-        assert!(!compose.is_active());
+    fn picker_search_base_s() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('s');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "ß"));
     }
 
     #[test]
-    fn compose_cancel_manual() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        assert!(compose.is_active());
-        let cp = compose.cancel();
-        assert_eq!(cp, Some(b'\'' as u32));
-        assert!(!compose.is_active());
+    fn picker_search_base_accent_starter() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('\'');
+        picker.search();
+        assert!(!picker.candidates.is_empty());
+        assert!(picker.candidates.iter().any(|c| c.result_char == "á"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "é"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "'"));
     }
 
     #[test]
-    fn compose_reset() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        assert!(compose.is_active());
-        compose.reset();
-        assert!(!compose.is_active());
-        assert_eq!(compose.get_preedit(), None);
+    fn picker_search_exact_match() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('\'');
+        picker.buffer.push('a');
+        picker.search();
+        assert_eq!(picker.candidates.len(), 1);
+        assert_eq!(picker.candidates[0].result_char, "á");
     }
 
     #[test]
-    fn compose_acute_a_uppercase() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        let result = compose.process_key(b'A' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x00C1)));
+    fn picker_search_no_match() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('z');
+        picker.buffer.push('q');
+        picker.search();
+        assert!(picker.candidates.is_empty());
+        assert_eq!(picker.selected, -1);
     }
 
     #[test]
-    fn compose_grave_e_lowercase() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'`' as u32);
-        let result = compose.process_key(b'e' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x00E8)));
+    fn picker_search_extra_rules() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('+');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "±"));
+
+        picker.buffer.clear();
+        picker.buffer.push('=');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "≡"));
+
+        picker.buffer.clear();
+        picker.buffer.push('o');
+        picker.search();
+        assert!(picker.candidates.iter().any(|c| c.result_char == "°"));
+        assert!(picker.candidates.iter().any(|c| c.result_char == "œ"));
     }
 
     #[test]
-    fn compose_tilde_n() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'~' as u32);
-        let result = compose.process_key(b'n' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x00F1)));
+    fn picker_navigation() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('\'');
+        picker.search();
+        assert!(picker.candidates.len() > 1);
+        assert_eq!(picker.selected, 0);
+
+        picker.select_down();
+        assert_eq!(picker.selected, 1);
+
+        picker.select_up();
+        assert_eq!(picker.selected, 0);
+
+        picker.select_up();
+        assert_eq!(picker.selected, 0);
+
+        let max = picker.candidates.len() as i32 - 1;
+        for _ in 0..max + 5 {
+            picker.select_down();
+        }
+        assert_eq!(picker.selected, max);
     }
 
     #[test]
-    fn compose_literal_quote() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'\'' as u32);
-        let result = compose.process_key(b'\'' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x0027)));
+    fn picker_backspace() {
+        let mut picker = ComposePicker::new();
+        picker.buffer.push('\'');
+        picker.buffer.push('a');
+        picker.search();
+        assert_eq!(picker.candidates.len(), 1);
+
+        assert!(picker.backspace());
+        assert_eq!(picker.buffer, "'");
+        assert!(picker.candidates.len() > 1);
+
+        assert!(picker.backspace());
+        assert_eq!(picker.buffer, "");
+        assert!(picker.candidates.is_empty());
+
+        assert!(!picker.backspace());
     }
 
     #[test]
-    fn compose_en_dash() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'-' as u32);
-        let result = compose.process_key(b'-' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x2013)));
+    fn picker_max_buffer() {
+        let mut picker = ComposePicker::new();
+        picker.append_char(b'a' as u32);
+        picker.append_char(b'b' as u32);
+        assert_eq!(picker.buffer, "ab");
+        picker.append_char(b'c' as u32);
+        assert_eq!(picker.buffer, "ab");
     }
 
     #[test]
-    fn compose_ellipsis() {
-        let mut compose = BasicCompose::new();
-        compose.process_key(b'.' as u32);
-        let result = compose.process_key(b'.' as u32);
-        assert!(matches!(result, ComposeResult::Commit(0x2026)));
+    fn picker_activate_deactivate() {
+        let mut picker = ComposePicker::new();
+        assert!(!picker.is_active());
+
+        picker.activate();
+        assert!(picker.is_active());
+        assert!(picker.buffer.is_empty());
+
+        picker.append_char(b'a' as u32);
+        assert!(!picker.buffer.is_empty());
+
+        picker.deactivate();
+        assert!(!picker.is_active());
+        assert!(picker.buffer.is_empty());
     }
 }
 
-/// Integration tests using the shared typio-engine-test harness.
-///
-/// Best practice: import ABI types from `typio-vet` instead of replicating
-/// them inline. The casts below are required because the keyboard process_key
-/// callback takes `*const c_void` per the ABI.
 #[cfg(test)]
 mod harness_tests {
     use super::*;
@@ -589,6 +785,7 @@ mod harness_tests {
             unicode: unicode as u32,
             time: 0,
             is_repeat: false,
+            base_keysym: unicode as u32,
         }
     }
 
@@ -642,11 +839,12 @@ mod harness_tests {
                 struct_size: std::mem::size_of::<TypioKeyEvent>(),
                 type_: TypioEventType::TypioEventKeyPress,
                 keycode: 0,
-                keysym: 0xFFE1, // Shift_L
+                keysym: 0xFFE1,
                 modifiers: TypioModifier::TypioModShift as u32,
                 unicode: 0,
                 time: 0,
                 is_repeat: false,
+                base_keysym: 0xFFE1,
             };
             let result = (*(*engine).keyboard).process_key.unwrap()(
                 engine,
@@ -657,53 +855,6 @@ mod harness_tests {
         }
 
         assert!(log.take().is_empty());
-
-        unsafe {
-            let base = &mut (*engine).base;
-            if let Some(destroy) = (*base.base_ops).destroy {
-                destroy(base);
-            }
-            libc::free(engine as *mut c_void);
-        }
-    }
-
-    #[test]
-    fn basic_compose_sequence_emits_composition() {
-        // Compose enabled
-        let mut config = std::collections::HashMap::new();
-        config.insert(
-            "engines.basic.compose".to_string(),
-            typio_vet::ConfigValue::Bool(true),
-        );
-
-        let (ctx, log) = mock_context();
-        let inst = mock_instance(config);
-        let engine = typio_keyboard_engine_create();
-        assert!(!engine.is_null());
-
-        unsafe {
-            let base = &mut (*engine).base;
-            if let Some(init) = (*base.base_ops).init {
-                assert_eq!(init(base, inst.cast()), TypioResult::TypioOk);
-            }
-
-            // Press '\'' (compose starter)
-            let ev1 = key_press('\'');
-            let r1 = (*(*engine).keyboard).process_key.unwrap()(engine, ctx.cast(), &ev1 as *const _ as *const c_void);
-            assert_eq!(r1, TypioKeyProcessResult::TypioKeyComposing);
-
-            let events1 = log.clone_events();
-            assert_eq!(events1.len(), 1);
-            assert!(matches!(events1[0], ContextEvent::SetComposition { ref preedit, .. } if preedit == "'"));
-
-            // Press 'a' -> should commit 'á'
-            let ev2 = key_press('a');
-            let r2 = (*(*engine).keyboard).process_key.unwrap()(engine, ctx.cast(), &ev2 as *const _ as *const c_void);
-            assert_eq!(r2, TypioKeyProcessResult::TypioKeyCommitted);
-        }
-
-        let events2 = log.take();
-        assert!(events2.iter().any(|e| matches!(e, ContextEvent::Commit(ref s) if s == "á")));
 
         unsafe {
             let base = &mut (*engine).base;
