@@ -431,7 +431,6 @@ extern "C" fn basic_commit_candidate(
     let text = CString::new(data.picker.candidates[idx].result_char.clone()).unwrap_or_default();
     data.picker.deactivate();
     data.picker_text_cache.clear();
-    unsafe { typio_input_context_clear(ctx) };
     unsafe { typio_input_context_commit(ctx, text.as_ptr()) };
     TypioResult::TypioOk
 }
@@ -466,6 +465,10 @@ fn picker_process_key(
      * as preedit input so the host can commit the selected candidate (Space)
      * or the raw preedit text (Enter). */
     if keysym == TYPIO_KEY_space || keysym == TYPIO_KEY_Return || keysym == TYPIO_KEY_KP_Enter {
+        return TypioKeyProcessResult::TypioKeyNotHandled;
+    }
+
+    if !data.picker.candidates.is_empty() && keysym >= 0x0030 && keysym <= 0x0039 {
         return TypioKeyProcessResult::TypioKeyNotHandled;
     }
 
@@ -526,6 +529,7 @@ fn picker_update_composition(
         revision: 0,
         host_managed_selection: (TypioHostManagedSelection::TypioHostSelNavigate as u32)
             | (TypioHostManagedSelection::TypioHostSelCommit as u32)
+            | (TypioHostManagedSelection::TypioHostSelIndexPick as u32)
             | (TypioHostManagedSelection::TypioHostSelCommitRaw as u32),
     };
 

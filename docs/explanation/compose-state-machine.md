@@ -1,57 +1,60 @@
 # Compose State Machine
 
-`typio-engine-basic` implements a minimal two-key compose system. This page explains the state machine that drives it.
+`typio-engine-basic` implements a Shift+Alt compose picker. This page explains the state machine that drives it.
 
 ## States
 
-The compose logic has two conceptual states, tracked by `BasicCompose.active`:
+The engine has two top-level states, determined by `ComposePicker.active`:
 
 | State | `active` | Meaning |
 |-------|----------|---------|
-| Idle | `false` | Waiting for the first key of a compose sequence. |
-| Pending | `true` | First key received; waiting for the second key. |
-
-There is no deeper nesting — this engine supports exactly two-key sequences.
+| Raw / Idle | `false` | All printable keys commit directly to the application. |
+| Picker Active | `true` | Typed characters build a search buffer; matching candidates are displayed for selection. |
 
 ## Transitions
 
-### Idle → Pending
+### Idle → Picker Active
 
-When `compose_enabled` is true and a printable key arrives:
+Press **Shift+Alt** to toggle the picker on. The engine calls `picker.activate()`, clears the buffer and candidates, and pushes an empty composition to the host.
 
-1. `BasicCompose::process_key` calls `can_start_compose` against the static `COMPOSE_RULES` table.
-2. If the codepoint appears as the first element of any rule, the engine enters the Pending state, stores the codepoint in `first`, and returns `ComposeResult::Consume`.
-3. The keyboard callback sees `Consume`, builds a `TypioComposition` containing the first key as pre-edit text, and calls `typio_input_context_set_composition`.
+### Typing in the Picker
 
-### Pending → Commit (success)
+Each printable key appends a character to the buffer (max 2 characters) and triggers a search:
 
-When a second key arrives while Pending:
+1. **One character** — `search_by_base(cp)` finds all rules where the character appears as either the first or second element, producing a broad candidate list.
+2. **Two characters** — `search_exact(first, second)` finds rules matching the exact pair, narrowing to typically 0 or 1 candidate.
 
-1. `process_key` searches `COMPOSE_RULES` for a tuple `(first, second, result)`.
-2. If a match is found, the engine returns to Idle and yields `ComposeResult::Commit(result)`.
-3. The keyboard callback clears the pre-edit and commits the result codepoint.
+When candidates exist, the first candidate is auto-selected.
 
-### Pending → Commit (failure / no rule)
+### Candidate Selection (Host-Managed)
 
-If the second key does not form a known sequence:
+The engine sets `host_managed_selection` flags on the composition to delegate selection to the host:
 
-1. The engine yields `ComposeResult::Cancel(first)`.
-2. The keyboard callback clears the pre-edit, commits the first key as a literal character, and then commits the second key as a literal character.
+| Flag | Key | Host Action |
+|------|-----|-------------|
+| `Navigate` | Up/Down/Left/Right | Host updates the selected index and re-renders the panel. |
+| `Commit` | Space | Host calls `commit_candidate` with the currently selected index. |
+| `IndexPick` | 1–9, 0 | Host calls `commit_candidate` with index 0–8 (1–9) or index 9 (0). |
+| `CommitRaw` | Enter / KP_Enter | Host commits the raw preedit buffer text as-is. |
 
-This behaviour ensures the user never loses input — even a "failed" compose commits both keystrokes.
+The engine returns `TypioKeyNotHandled` for these keys so the host's candidate guard can intercept them.
 
-### Pending → Idle (cancel)
+Digit keys 0–9 are returned as `NotHandled` **only when candidates are present**. When no candidates exist, digits are appended to the compose buffer like any other printable character (e.g. `^` + `1` produces `¹`).
 
-If the user presses Escape while Pending:
+### Picker → Idle (cancel)
 
-1. The keyboard callback detects `typio_key_event_is_escape`.
-2. It calls `compose.cancel()`, which returns `Some(first)`.
-3. The pre-edit is cleared. No text is committed.
+- **Escape**: deactivates the picker, clears the composition.
+- **Shift+Alt** (toggle): deactivates the picker.
+- **Backspace on empty buffer**: deactivates the picker.
+- **Focus out**: triggers `reset`, which deactivates the picker.
 
-If a non-printable key (e.g. Backspace, Arrow) is pressed while Pending:
+### Committing a Candidate
 
-1. The engine cancels the compose, commits the first key as a literal, and returns `TypioKeyCommitted`.
-2. The non-printable key is then handled by the host or another layer.
+When the host calls `commit_candidate(index)`:
+
+1. The engine retrieves the result character from `picker.candidates[index]`.
+2. Deactivates the picker and clears the text cache.
+3. Calls `typio_input_context_commit` to commit the character. The host automatically clears the preedit and candidate panel.
 
 ## Why a static table?
 
@@ -59,6 +62,6 @@ The `COMPOSE_RULES` array is a compile-time constant. This keeps the engine:
 
 - **Zero-allocation** at runtime — no hash maps, no trees.
 - **Self-contained** — no external dictionary files to ship or load.
-- **Predictable** — lookup is a small linear scan over ~80 entries, which is faster than a hash map for this data size.
+- **Predictable** — lookup is a small linear scan over ~117 entries, which is faster than a hash map for this data size.
 
 For a more sophisticated compose system (multi-key sequences, user-defined rules, locale-specific tables), a dedicated compose engine plugin would be more appropriate.

@@ -1,48 +1,31 @@
-# How to Enable Compose Mode
+# How to Use Compose Mode
 
-By default `typio-engine-basic` commits keys directly and does not perform composition. This guide shows how to turn on two-key compose sequences (for example `'` + `a` → `á`).
+By default `typio-engine-basic` commits keys directly to the application. The compose picker provides access to extended Latin characters (e.g. `á`, `ñ`, `ü`) via two-key sequences.
 
-## Set the configuration key
+## Activate the picker
 
-Add the following to your Typio host configuration:
-
-```ini
-[engines.basic]
-compose = true
-```
-
-The exact file and format depend on the host. Common locations:
-
-| Host | Typical config path |
-|------|---------------------|
-| `libtypio` default | `~/.config/typio/typio.conf` |
-| System-wide | `/etc/typio/typio.conf` |
-
-## Restart or reload the engine
-
-After saving the config, either:
-
-- Restart the Typio host / input-method daemon, or
-- Trigger a config reload if the host supports live reloading.
+Press **Shift+Alt** to toggle the compose picker on. The same shortcut toggles it off.
 
 ## Verify
 
 1. Focus a text field.
-2. Press `'` (apostrophe) once. You should see an underlined `'` in the pre-edit area.
-3. Press `a`. The pre-edit disappears and `á` is committed.
+2. Press **Shift+Alt**. An empty pre-edit area should appear.
+3. Type `'` (apostrophe). A candidate list of accented characters appears (á, é, í, ó, ú, …).
+4. Press a letter key (e.g. `a`) to narrow to a single candidate (`á`), then press **Space** to commit it. Alternatively, press a **number key** (1–9, 0) to pick a candidate by index directly from the list.
 
-If nothing happens, check the host logs for config-parsing errors and confirm the engine was re-initialised after the config change.
+## Selection keys
 
-## Disable
-
-Set `compose = false` (or remove the key) and reload:
-
-```ini
-[engines.basic]
-compose = false
-```
+| Key | Action |
+|-----|--------|
+| Up/Down/Left/Right | Navigate through candidates |
+| Space | Commit the currently selected candidate |
+| Enter | Commit the raw preedit buffer text as-is |
+| 1–9 | Commit candidate at index 0–8 |
+| 0 | Commit candidate at index 9 (10th item) |
+| Escape | Cancel and close the picker |
+| Backspace | Remove last character from buffer; close picker if empty |
 
 ## See also
 
 - [Compose sequences reference](../reference/compose-sequences.md) — full table of supported combinations.
-- [How compose works](../explanation/compose-state-machine.md) — explanation of the pre-edit and commit flow.
+- [How compose works](../explanation/compose-state-machine.md) — explanation of the state machine and host-managed selection.

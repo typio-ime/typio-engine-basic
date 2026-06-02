@@ -1,6 +1,6 @@
 # Compose Sequences
 
-These two-key combinations are active when `engines.basic.compose = true`.
+These two-key combinations are available when the compose picker is active (press Shift+Alt to toggle).
 
 ## Acute accent — `'`
 
