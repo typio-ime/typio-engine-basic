@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-06-02
+
+### Fixed
+
+- **Digit keys 0–9 now select candidates by index (ADR-0012).** The compose
+  picker sets `TypioHostSelIndexPick` in `host_managed_selection` so the host
+  intercepts digit keys when candidates are present. Keys 1–9 commit candidate
+  at index 0–8; key 0 commits candidate at index 9. When no candidates exist,
+  digits are still usable as compose buffer input (e.g. `^` + `1` → `¹`).
+- Removed redundant `typio_input_context_clear` call in `commit_candidate`;
+  `typio_input_context_commit` already clears preedit and candidates atomically.
+
 ## [0.1.2] - 2026-06-02
 
 ### Changed
