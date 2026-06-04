@@ -18,11 +18,13 @@ The artifact is `target/release/libtypio_engine_basic.so`.
 
 ## Install into a Typio host
 
-Copy or symlink the `.so` into the host’s engine directory:
+For quick local checks, copy or symlink the `.so` into an explicit development
+engine directory and pass that directory to the host:
 
 ```bash
-mkdir -p /usr/local/lib/typio/engines
-cp target/release/libtypio_engine_basic.so /usr/local/lib/typio/engines/
+mkdir -p build/engines
+cp target/release/libtypio_engine_basic.so build/engines/
+typio --engine-dir "$PWD/build/engines" --list
 ```
 
 Also install the symbolic icon so the host can resolve the engine’s brand icon:
@@ -32,7 +34,9 @@ install -Dm644 data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg 
     /usr/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
 ```
 
-The exact paths depend on the host’s `TYPIO_ENGINE_PATH` or default search path.
+Packaged hosts discover system-installed engines from
+`<prefix>/<libdir>/typio/engines`. Development directories are explicit
+runtime overrides through `--engine-dir` or `TYPIO_ENGINE_DIR`.
 
 ## Run tests
 

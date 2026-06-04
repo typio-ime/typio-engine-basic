@@ -33,14 +33,17 @@ Keep an unstripped copy if you need debug symbols later.
 const TypioAbiVersion *typio_engine_abi_version(void);
 ```
 
-The returned struct must match the host’s expected ABI version. Check the values at runtime or inspect the source:
+The returned struct must match the host’s expected ABI version. The values come
+from the `typio-abi` dependency:
 
 ```rust
-pub const TYPIO_ENGINE_ABI_MAJOR: u16 = 0;
-pub const TYPIO_ENGINE_ABI_MINOR: u16 = 1;
+TYPIO_ENGINE_ABI_MAJOR
+TYPIO_ENGINE_ABI_MINOR
 ```
 
-If the host expects a different version, the engine will be rejected at load time. Coordinate with the host maintainers before bumping the ABI version in this crate.
+If the host expects a different major version, or an older minor version, the
+engine will be rejected at load time. Rebuild the engine against the target
+`typio-abi` version when packaging it with a new Typio host release.
 
 ## Verify exported symbols
 
@@ -74,8 +77,8 @@ A complete installation consists of two parts: the shared library and the icon a
 
 ### Engine library
 
-```
-/usr/local/lib/typio/engines/
+```text
+<prefix>/<libdir>/typio/engines/
 └── libtypio_engine_basic.so
 ```
 
@@ -90,8 +93,8 @@ sudo install -Dm644 data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic
 
 Alternatively, bundle it next to the `.so` for portable installs:
 
-```
-/usr/local/lib/typio/engines/
+```text
+<prefix>/<libdir>/typio/engines/
 ├── libtypio_engine_basic.so
 └── icons/
     └── hicolor/

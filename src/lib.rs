@@ -13,20 +13,6 @@ use std::ptr;
 
 use typio_abi::*;
 
-/* -------------------------------------------------------------------------- */
-/* ABI version                                                                */
-/* -------------------------------------------------------------------------- */
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct TypioAbiVersion {
-    pub major: u16,
-    pub minor: u16,
-}
-
-pub const TYPIO_ENGINE_ABI_MAJOR: u16 = 0;
-pub const TYPIO_ENGINE_ABI_MINOR: u16 = 1;
-
 static TYPIO_ENGINE_ABI_VERSION_STATIC: TypioAbiVersion = TypioAbiVersion {
     major: TYPIO_ENGINE_ABI_MAJOR,
     minor: TYPIO_ENGINE_ABI_MINOR,
@@ -549,6 +535,7 @@ static BASIC_BASE_OPS: TypioEngineBaseOps = TypioEngineBaseOps {
     reset: Some(basic_reset),
     reload_config: Some(basic_reload_config),
     on_config_change: None,
+    availability: None,
 };
 
 static BASIC_KEYBOARD_OPS: TypioKeyboardEngineOps = TypioKeyboardEngineOps {

@@ -75,11 +75,13 @@ All tests should pass.
 
 ## Step 4 — Install the plugin
 
-Cargo only compiles the engine; it does **not** install anything to system directories. Copy the `.so` into the Typio engine search path manually:
+Cargo only compiles the engine; it does **not** install anything to system
+directories. For this tutorial, copy the `.so` into an explicit development
+engine directory:
 
 ```bash
-sudo mkdir -p /usr/local/lib/typio/engines
-sudo cp target/release/libtypio_engine_basic.so /usr/local/lib/typio/engines/
+mkdir -p build/engines
+cp target/release/libtypio_engine_basic.so build/engines/
 ```
 
 Also install the symbolic icon so the host can display the engine’s brand icon:
@@ -89,11 +91,19 @@ sudo install -Dm644 data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic
     /usr/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
 ```
 
-The exact paths may differ depending on your host configuration. Consult your Typio host documentation for the correct engine directory and icon theme path.
+Packaged hosts discover system-installed engines from
+`<prefix>/<libdir>/typio/engines`. Development directories are explicit runtime
+overrides through `--engine-dir` or `TYPIO_ENGINE_DIR`.
 
 ## Step 5 — Verify the host sees the engine
 
-Restart your Typio host (or the input-method daemon). The host should enumerate `typio_engine_basic` as an available engine. If the host logs engine discovery, look for a line mentioning `basic` or `typio_engine_basic`.
+Run the host against the development directory:
+
+```bash
+typio --engine-dir "$PWD/build/engines" --list
+```
+
+The output should include `basic` under available keyboard engines.
 
 ## What you have learned
 

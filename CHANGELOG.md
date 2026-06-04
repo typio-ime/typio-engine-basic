@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-06-04
+
+### Fixed
+
+- **Current Typio host compatibility.** `typio_engine_abi_version()` now reports
+  the `TypioAbiVersion` type and version constants from `typio-abi` instead of
+  a stale local mirror. Current hosts now read the plugin ABI as `0.2` and load
+  `libtypio_engine_basic.so` successfully.
+- Updated developer and packaging docs to use explicit development engine
+  directories (`--engine-dir` / `TYPIO_ENGINE_DIR`) and the system
+  `<prefix>/<libdir>/typio/engines` install location.
+
 ## [0.1.3] - 2026-06-02
 
 ### Fixed

@@ -12,8 +12,8 @@ Returns a pointer to the ABI version this engine was built against. The host use
 
 | Field | Value | Meaning |
 |-------|-------|---------|
-| `major` | `0` | Breaking-change compatibility boundary. |
-| `minor` | `1` | Backward-compatible feature level. |
+| `major` | `TYPIO_ENGINE_ABI_MAJOR` from `typio-abi` | Breaking-change compatibility boundary. |
+| `minor` | `TYPIO_ENGINE_ABI_MINOR` from `typio-abi` | Backward-compatible feature level. |
 
 ## `typio_engine_get_info`
 

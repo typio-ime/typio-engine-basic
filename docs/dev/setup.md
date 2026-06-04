@@ -40,16 +40,20 @@ Artifact: `target/release/libtypio_engine_basic.so`
 
 ## Apply / Install
 
-The exact destination depends on the Typio host’s engine search path (often `TYPIO_ENGINE_PATH` or defaults such as `~/.local/lib/typio/engines` for user-level, `/usr/local/lib/typio/engines` for system-wide).
+Packaged Typio hosts discover system-installed engines from
+`<prefix>/<libdir>/typio/engines`. Development directories are explicit runtime
+overrides through `--engine-dir` or `TYPIO_ENGINE_DIR`.
 
 ### Development (quick iteration)
 
-Copy the debug `.so` into the user-level engine directory (re-copy after each build, or use `ln -sf` if you want it to auto-update):
+Copy the debug `.so` into a development engine directory and point the host at
+that directory:
 
 ```bash
-mkdir -p ~/.local/lib/typio/engines
+mkdir -p build/engines
 cp target/debug/libtypio_engine_basic.so \
-    ~/.local/lib/typio/engines/
+    build/engines/
+typio --engine-dir "$PWD/build/engines" --list
 ```
 
 Copy the brand icon into your user icon directory:
@@ -78,7 +82,9 @@ cp data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg \
 chmod 644 /usr/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
 ```
 
-Run `ldconfig` if the host loader does not already scan `/usr/local/lib/typio/engines`.
+Use the engine directory that matches the host package prefix. A host installed
+with `--prefix=/usr` scans `/usr/lib/typio/engines`; a `/usr/local` host scans
+`/usr/local/lib/typio/engines`.
 
 ---
 

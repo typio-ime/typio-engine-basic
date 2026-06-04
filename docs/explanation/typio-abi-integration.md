@@ -37,19 +37,21 @@ Benefits:
 - **Compile-time checking** — Rust engines that depend on `typio-abi` fail to compile if they use outdated field names or types.
 - **IDE support** — autocomplete and go-to-definition work across the project boundary.
 
-## The one exception: `TypioAbiVersion`
+## ABI version
 
-At the time of writing, `TypioAbiVersion` is defined locally in `src/lib.rs`:
+`TypioAbiVersion` and the current `TYPIO_ENGINE_ABI_MAJOR` /
+`TYPIO_ENGINE_ABI_MINOR` constants come from `typio-abi`:
 
 ```rust
-#[repr(C)]
-pub struct TypioAbiVersion {
-    pub major: u16,
-    pub minor: u16,
-}
+static TYPIO_ENGINE_ABI_VERSION_STATIC: TypioAbiVersion = TypioAbiVersion {
+    major: TYPIO_ENGINE_ABI_MAJOR,
+    minor: TYPIO_ENGINE_ABI_MINOR,
+};
 ```
 
-This is a temporary mirror. Once `typio-abi` exports this type, the local definition will be removed and the engine will import it directly.
+The plugin exports `typio_engine_abi_version()` by returning a pointer to this
+static value. Do not mirror the struct locally; field width or version changes
+must stay centralized in `typio-abi`.
 
 ## For engine authors
 
