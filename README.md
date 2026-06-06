@@ -1,31 +1,19 @@
 # typio-engine-basic
 
-The always-installable keyboard fallback for the Typio input method
-framework. Commits printable Unicode text directly, with optional
-two-key compose sequences for accented characters.
+The always-installable keyboard fallback for Typio. It commits printable
+Unicode text directly and provides a Shift+Alt compose picker for accented
+Latin characters.
 
 ## Role in the ecosystem
 
-`typio-engine-basic` is a **reference engine plugin**. It demonstrates the
-correct way to build a Rust engine against the shared `typio-abi` crate
-rather than replicating C ABI types by hand.
-
-```
-┌─────────────────┐      use typio_abi::*;       ┌──────────────────┐
-│   libtypio      │ ◄──────────────────────────── │  typio-engine-   │
-│  (host/runtime) │   loads .so at runtime        │     basic        │
-└─────────────────┘                               └──────────────────┘
-         ▲                                                 │
-         │                                                 │
-         └─────────────────────────────────────────────────┘
-              depends on typio-abi for shared types
-```
+`typio-engine-basic` is a native IPC worker engine. The host discovers
+`typio-engine-basic.toml`, starts the worker command declared by that manifest,
+and exchanges line-oriented worker protocol messages over stdin/stdout.
 
 | What | Where |
 |---|---|
-| Engine implementation | [`src/lib.rs`](src/lib.rs) |
-| ABI types (shared) | [`typio-abi`](../libtypio/crates/abi) |
-| Test harness | [`typio-engine-test`](../typio-engine-test) |
+| Worker implementation | [`src/main.rs`](src/main.rs) |
+| Manifest | [`typio-engine-basic.toml`](typio-engine-basic.toml) |
 | Host framework | [`libtypio`](../libtypio) |
 
 ## Build
@@ -34,8 +22,13 @@ rather than replicating C ABI types by hand.
 cargo build --release
 ```
 
-The output is `target/release/libtypio_engine_basic.so`, which the Typio
-host discovers under `<libdir>/typio/engines/`.
+The output is `target/release/typio-engine-basic`.
+
+For a development host run, point the host at the repository root:
+
+```bash
+typio --engine-dir "$PWD"
+```
 
 ## Test
 
@@ -43,21 +36,17 @@ host discovers under `<libdir>/typio/engines/`.
 cargo test
 ```
 
-Unit tests cover the compose state machine. Integration tests (in the
-`harness_tests` module) exercise the full C ABI surface through the shared
-[`typio-engine-test`](../typio-engine-test) mock harness.
+Unit tests cover the compose state machine.
 
 ## Key design points
 
-- **Zero hand-replicated ABI types** — all `#[repr(C)]` structs, enums,
-  and constants come from `use typio_abi::*;`.
-- **`cdylib`** — compiled as a loadable plugin, not an executable or
-  static library.
-- **Compose rules** — simple static table (`'` + `a` → `á`, etc.). No
-  external dictionaries.
-- **Config-driven** — reads `engines.basic.compose` from the host config
-  to enable/disable compose mode.
+- **Worker executable** — runs out of process from the daemon.
+- **Manifest discovery** — `typio-engine-basic.toml` declares metadata,
+  capabilities, and worker argv.
+- **Compose rules** — simple static table (`'` + `a` -> `á`, etc.).
+- **No runtime dependencies** — no dictionaries, model files, or shared engine
+  library.
 
 ## License
 
-MIT — see [`../libtypio/LICENSE`](../libtypio/LICENSE).
+MIT — see [`LICENSE`](LICENSE).

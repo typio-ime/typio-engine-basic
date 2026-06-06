@@ -1,113 +1,77 @@
 # How to Package the Engine for Distribution
 
-This guide covers building a release-quality `libtypio_engine_basic.so` and verifying that it remains compatible with the Typio host ABI.
-
-## Build a clean release artifact
+## Build a Release Worker
 
 ```bash
-cargo clean
 cargo build --release
 ```
 
-The resulting file is:
-
-```
-target/release/libtypio_engine_basic.so
-```
-
-## Strip debug symbols (optional)
-
-To reduce binary size for distribution:
+## Install the Worker
 
 ```bash
-strip target/release/libtypio_engine_basic.so
+install -Dm755 target/release/typio-engine-basic \
+  <prefix>/<libexecdir>/typio/engines/typio-engine-basic
 ```
 
-Keep an unstripped copy if you need debug symbols later.
-
-## Verify ABI version
-
-`typio-engine-basic` exports:
-
-```c
-const TypioAbiVersion *typio_engine_abi_version(void);
-```
-
-The returned struct must match the host’s expected ABI version. The values come
-from the `typio-abi` dependency:
-
-```rust
-TYPIO_ENGINE_ABI_MAJOR
-TYPIO_ENGINE_ABI_MINOR
-```
-
-If the host expects a different major version, or an older minor version, the
-engine will be rejected at load time. Rebuild the engine against the target
-`typio-abi` version when packaging it with a new Typio host release.
-
-## Verify exported symbols
+## Install the Manifest
 
 ```bash
-nm -D target/release/libtypio_engine_basic.so | grep -E 'typio_engine|typio_keyboard'
+install -Dm644 /dev/stdin \
+  <prefix>/<datadir>/typio/engines/typio-engine-basic.toml <<'EOF'
+name = "basic"
+type = "keyboard"
+display_name = "Basic"
+description = "Basic keyboard engine with Shift+Alt compose picker."
+author = "Typio"
+icon = "typio-engine-basic"
+language = "und"
+command = "<prefix>/<libexecdir>/typio/engines/typio-engine-basic"
+args = []
+required = ["preedit", "candidates"]
+optional = []
+EOF
 ```
 
-You should see at minimum:
+## Install the Icon
 
-```
-typio_engine_abi_version
-typio_engine_get_info
-typio_keyboard_engine_create
-```
-
-Missing symbols indicate a build or linking problem.
-
-## What Cargo does (and does not)
-
-`cargo build --release` produces exactly one file:
-
-```
-target/release/libtypio_engine_basic.so
+```bash
+install -Dm644 data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg \
+  <prefix>/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
 ```
 
-It **does not** install the `.so` into system directories, and it **does not** copy data files such as icons. Installation of the library and its assets is the responsibility of the packager, the system administrator, or a distribution package.
-
-## Distribution package layout
-
-A complete installation consists of two parts: the shared library and the icon asset.
-
-### Engine library
+## Installed Layout
 
 ```text
-<prefix>/<libdir>/typio/engines/
-└── libtypio_engine_basic.so
+<prefix>/
+├── <libexecdir>/
+│   └── typio/
+│       └── engines/
+│           └── typio-engine-basic
+└── share/
+    ├── typio/
+    │   └── engines/
+    │       └── typio-engine-basic.toml
+    └── icons/
+        └── hicolor/
+            └── symbolic/
+                └── apps/
+                    └── typio-engine-basic-symbolic.svg
 ```
 
-### Icon asset
-
-Install the symbolic icon so the host can resolve `typio-engine-basic` through the icon theme:
+## Verification
 
 ```bash
-sudo install -Dm644 data/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg \
-    /usr/share/icons/hicolor/symbolic/apps/typio-engine-basic-symbolic.svg
+<prefix>/<libexecdir>/typio/engines/typio-engine-basic <<'EOF'
+availability
+shutdown
+EOF
 ```
-
-Alternatively, bundle it next to the `.so` for portable installs:
 
 ```text
-<prefix>/<libdir>/typio/engines/
-├── libtypio_engine_basic.so
-└── icons/
-    └── hicolor/
-        └── symbolic/
-            └── apps/
-                └── typio-engine-basic-symbolic.svg
+AVAILABILITY	READY
+END
 ```
 
-The host scans `<engine-dir>/icons/` and exposes it through the tray’s `IconThemePath`, so panels can resolve the symbolic icon automatically.
+## See Also
 
-No additional run-time dependencies are required.
-
-## See also
-
-- [ABI entry points reference](../reference/abi-entry-points.md)
-- [ADR-0001: Use typio-abi crate instead of hand-replicated types](../adr/0001-use-typio-abi-crate.md)
+- [Worker manifest](../reference/worker-manifest.md)

@@ -28,11 +28,11 @@ via `TypioEngineInfo.icon`. The host resolves this name against the current icon
     └── typio-engine-basic-symbolic.svg
 ```
 
-### Bundled (next to the `.so`)
+### Bundled (next to the manifest)
 
 ```text
-lib/typio/engines/
-├── libtypio_engine_basic.so
+share/typio/engines/
+├── typio-engine-basic.toml
 └── icons/
     └── hicolor/
         └── symbolic/

@@ -1,0 +1,11 @@
+name = "basic"
+type = "keyboard"
+display_name = "Basic"
+description = "Basic keyboard engine with Shift+Alt compose picker."
+author = "Typio"
+icon = "typio-engine-basic"
+language = "und"
+command = "./target/release/typio-engine-basic"
+args = []
+required = ["preedit", "candidates"]
+optional = []

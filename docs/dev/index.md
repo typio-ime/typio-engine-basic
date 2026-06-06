@@ -7,10 +7,10 @@ This directory contains documentation for people who build, test, or modify `typ
 | Page | What it covers |
 |------|----------------|
 | [Setup](setup.md) | Prepare your development environment. |
-| [Building and testing](building-and-testing.md) | Compile the plugin and run the test suite. |
+| [Building and testing](building-and-testing.md) | Compile the worker and run the test suite. |
 | [Documentation style guide](documentation-style-guide.md) | How to write and organise docs for this project. |
 
 ## Quick links
 
-- Source code: [`src/lib.rs`](../../src/lib.rs)
+- Source code: [`src/main.rs`](../../src/main.rs)
 - Project README: [`README.md`](../../README.md)

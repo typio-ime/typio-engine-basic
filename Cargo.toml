@@ -1,17 +1,12 @@
 [package]
 name = "typio-engine-basic"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
 authors = ["Typio Contributors"]
 license = "MIT"
 
 [dependencies]
-libc = "0.2"
-typio-abi = { path = "../libtypio/crates/abi" }
 
-[dev-dependencies]
-typio-vet = { path = "../typio-vet" }
-
-[lib]
-name = "typio_engine_basic"
-crate-type = ["cdylib"]
+[[bin]]
+name = "typio-engine-basic"
+path = "src/main.rs"
