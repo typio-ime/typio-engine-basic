@@ -1,4 +1,19 @@
-use std::io::{self, BufRead, Write};
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::os::fd::FromRawFd;
+
+const ENGINE_PROTOCOL_FD: i32 = 3;
+const FRAME_MAGIC: u32 = 0x5459_4550;
+const PROTOCOL_MAJOR: u16 = 1;
+const PROTOCOL_MINOR: u16 = 0;
+const MAX_PAYLOAD_LEN: usize = 1 << 20;
+const HEADER_LEN: usize = 28;
+
+const MSG_ENGINE_HELLO: u32 = 1;
+const MSG_HOST_HELLO: u32 = 2;
+const MSG_REQUEST: u32 = 3;
+const MSG_RESPONSE: u32 = 4;
+const MSG_ERROR: u32 = 6;
 
 const MOD_CTRL: u32 = 1 << 1;
 const MOD_ALT: u32 = 1 << 2;
@@ -207,43 +222,165 @@ struct KeyEvent {
 }
 
 fn main() {
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
+    let fd = std::env::var("TYPIO_ENGINE_FD")
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(ENGINE_PROTOCOL_FD);
+    let mut protocol = unsafe { File::from_raw_fd(fd) };
     let mut worker = Worker::default();
 
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else {
+    if write_frame(
+        &mut protocol,
+        MSG_ENGINE_HELLO,
+        0,
+        engine_hello().as_bytes(),
+    )
+    .is_err()
+    {
+        return;
+    }
+    let Ok(host_hello) = read_frame(&mut protocol) else {
+        return;
+    };
+    if host_hello.message_type != MSG_HOST_HELLO {
+        let _ = write_frame(
+            &mut protocol,
+            MSG_ERROR,
+            host_hello.request_id,
+            b"expected host hello",
+        );
+        return;
+    }
+
+    loop {
+        let Ok(frame) = read_frame(&mut protocol) else {
             break;
+        };
+        if frame.message_type != MSG_REQUEST {
+            let _ = write_frame(
+                &mut protocol,
+                MSG_ERROR,
+                frame.request_id,
+                b"expected request",
+            );
+            continue;
+        }
+        let Ok(line) = String::from_utf8(frame.payload) else {
+            let _ = write_frame(
+                &mut protocol,
+                MSG_ERROR,
+                frame.request_id,
+                b"invalid request utf-8",
+            );
+            continue;
         };
         if line == "shutdown" {
             break;
         }
-        worker.handle_request(&line, &mut stdout);
+        let mut response = Vec::new();
+        worker.handle_request(&line, &mut response);
+        let _ = write_frame(&mut protocol, MSG_RESPONSE, frame.request_id, &response);
     }
+}
+
+struct Frame {
+    message_type: u32,
+    request_id: u64,
+    payload: Vec<u8>,
+}
+
+fn engine_hello() -> &'static str {
+    "protocol\t1.0\nengine\tbasic\ntype\tkeyboard"
+}
+
+fn read_frame(reader: &mut impl Read) -> io::Result<Frame> {
+    let mut header = [0u8; HEADER_LEN];
+    reader.read_exact(&mut header)?;
+    let magic = u32::from_be_bytes(header[0..4].try_into().unwrap());
+    if magic != FRAME_MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad frame magic",
+        ));
+    }
+    let major = u16::from_be_bytes(header[4..6].try_into().unwrap());
+    if major != PROTOCOL_MAJOR {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsupported protocol major",
+        ));
+    }
+    let message_type = u32::from_be_bytes(header[8..12].try_into().unwrap());
+    let request_id = u64::from_be_bytes(header[16..24].try_into().unwrap());
+    let payload_len = u32::from_be_bytes(header[24..28].try_into().unwrap()) as usize;
+    if payload_len > MAX_PAYLOAD_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "oversized frame",
+        ));
+    }
+    let mut payload = vec![0u8; payload_len];
+    reader.read_exact(&mut payload)?;
+    Ok(Frame {
+        message_type,
+        request_id,
+        payload,
+    })
+}
+
+fn write_frame(
+    writer: &mut impl Write,
+    message_type: u32,
+    request_id: u64,
+    payload: &[u8],
+) -> io::Result<()> {
+    if payload.len() > MAX_PAYLOAD_LEN {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "oversized frame",
+        ));
+    }
+    let mut header = [0u8; HEADER_LEN];
+    header[0..4].copy_from_slice(&FRAME_MAGIC.to_be_bytes());
+    header[4..6].copy_from_slice(&PROTOCOL_MAJOR.to_be_bytes());
+    header[6..8].copy_from_slice(&PROTOCOL_MINOR.to_be_bytes());
+    header[8..12].copy_from_slice(&message_type.to_be_bytes());
+    header[12..16].copy_from_slice(&0u32.to_be_bytes());
+    header[16..24].copy_from_slice(&request_id.to_be_bytes());
+    header[24..28].copy_from_slice(&(payload.len() as u32).to_be_bytes());
+    writer.write_all(&header)?;
+    writer.write_all(payload)?;
+    writer.flush()
 }
 
 impl Worker {
     fn handle_request(&mut self, line: &str, stdout: &mut impl Write) {
         let mut fields = line.split('\t');
-        match fields.next().unwrap_or("") {
-            "init" | "deactivate" | "focus-in" | "reload-config" | "set-active-mode" => {
-                write_ok(stdout);
+        let emit_mode = match fields.next().unwrap_or("") {
+            "init" | "deactivate" | "focus-out" | "reload-config" => {
+                let _ = writeln!(stdout, "OK");
+                false
             }
-            "focus-out" | "reset" => {
+            "focus-in" | "set-active-mode" => {
+                let _ = writeln!(stdout, "OK");
+                true
+            }
+            "reset" => {
                 self.reset(stdout);
-                write_ok(stdout);
+                let _ = writeln!(stdout, "OK");
+                true
             }
             "availability" => {
                 let _ = writeln!(stdout, "AVAILABILITY\tREADY");
-                write_end(stdout);
+                false
             }
             "list-modes" => {
                 write_mode("MODE", stdout);
-                write_end(stdout);
+                false
             }
             "get-active-mode" => {
                 write_mode("ACTIVE_MODE", stdout);
-                write_end(stdout);
+                false
             }
             "commit-candidate" => {
                 let _ctx = fields.next();
@@ -252,11 +389,11 @@ impl Worker {
                     .and_then(|v| v.parse::<usize>().ok())
                     .unwrap_or(0);
                 if self.commit_candidate(index, stdout) {
-                    write_ok(stdout);
+                    let _ = writeln!(stdout, "OK");
                 } else {
                     let _ = writeln!(stdout, "ERR\tinvalid candidate");
-                    write_end(stdout);
                 }
+                false
             }
             "process-key" => {
                 let _ctx = fields.next();
@@ -269,12 +406,17 @@ impl Worker {
                     unicode: parse_u32(fields.next()),
                 };
                 self.process_key(event, stdout);
+                true
             }
             _ => {
                 let _ = writeln!(stdout, "ERR\tunknown request");
-                write_end(stdout);
+                false
             }
+        };
+        if emit_mode {
+            write_mode("ACTIVE_MODE", stdout);
         }
+        write_end(stdout);
     }
 
     fn process_key(&mut self, event: KeyEvent, stdout: &mut impl Write) {
@@ -285,13 +427,13 @@ impl Worker {
             if is_shift {
                 self.shift_chord_pending = false;
             }
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             return;
         }
 
         if is_shift {
             self.shift_chord_pending = true;
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             return;
         }
 
@@ -304,16 +446,16 @@ impl Worker {
                     self.picker.activate();
                     self.write_composition(stdout);
                 }
-                write_result(stdout, "HANDLED");
+                let _ = writeln!(stdout, "RESULT\tHANDLED");
             } else {
-                write_result(stdout, "NOT_HANDLED");
+                let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             }
             return;
         }
 
         self.shift_chord_pending = false;
         if has_blocking_modifiers(event.modifiers) {
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             return;
         }
 
@@ -326,46 +468,45 @@ impl Worker {
             let text = codepoint_to_string(event.unicode);
             let _ = writeln!(stdout, "RESULT\tCOMMITTED");
             let _ = writeln!(stdout, "COMMIT\t{}", hex_encode(text.as_bytes()));
-            write_end(stdout);
         } else {
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
         }
     }
 
     fn process_picker_key(&mut self, event: KeyEvent, stdout: &mut impl Write) {
         if event.keysym == KEY_ESCAPE {
             self.reset(stdout);
-            write_result(stdout, "HANDLED");
+            let _ = writeln!(stdout, "RESULT\tHANDLED");
             return;
         }
 
         if event.keysym == KEY_BACKSPACE {
             if self.picker.backspace() {
                 self.write_composition(stdout);
-                write_result(stdout, "COMPOSING");
+                let _ = writeln!(stdout, "RESULT\tCOMPOSING");
             } else {
                 self.reset(stdout);
-                write_result(stdout, "HANDLED");
+                let _ = writeln!(stdout, "RESULT\tHANDLED");
             }
             return;
         }
 
         if event.keysym == KEY_SPACE || event.keysym == KEY_RETURN || event.keysym == KEY_KP_ENTER {
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             return;
         }
 
         if !self.picker.candidates.is_empty() && (0x30..=0x39).contains(&event.keysym) {
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
             return;
         }
 
         if event.unicode >= 0x20 && event.unicode != 0x7f {
             self.picker.append_char(event.unicode);
             self.write_composition(stdout);
-            write_result(stdout, "COMPOSING");
+            let _ = writeln!(stdout, "RESULT\tCOMPOSING");
         } else {
-            write_result(stdout, "NOT_HANDLED");
+            let _ = writeln!(stdout, "RESULT\tNOT_HANDLED");
         }
     }
 
@@ -407,21 +548,11 @@ impl Worker {
 fn write_mode(prefix: &str, stdout: &mut impl Write) {
     let _ = writeln!(
         stdout,
-        "{prefix}\t{}\t{}\t{}\t\t\t\t\t1",
+        "{prefix}\t{}\t{}\t{}\t\t\t\t\t1\t0",
         hex_encode(b"compose"),
         hex_encode(b"Compose"),
         hex_encode(b"Abc")
     );
-}
-
-fn write_ok(stdout: &mut impl Write) {
-    let _ = writeln!(stdout, "OK");
-    write_end(stdout);
-}
-
-fn write_result(stdout: &mut impl Write, result: &str) {
-    let _ = writeln!(stdout, "RESULT\t{result}");
-    write_end(stdout);
 }
 
 fn write_end(stdout: &mut impl Write) {

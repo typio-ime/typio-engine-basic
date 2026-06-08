@@ -1,5 +1,6 @@
 name = "basic"
 type = "keyboard"
+protocol = "typio-engine-protocol"
 display_name = "Basic"
 description = "Basic keyboard engine with Shift+Alt compose picker."
 author = "Typio"

@@ -4,7 +4,7 @@
 
 | Tool | Minimum version | Purpose |
 |------|-----------------|---------|
-| Rust | stable (edition 2021) | Builds the worker executable |
+| Rust | stable (edition 2021) | Builds the engine executable |
 | cargo | bundled with Rust | Runs builds and tests |
 
 ## Build

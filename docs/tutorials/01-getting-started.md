@@ -95,7 +95,7 @@ The output should include `basic` under available keyboard engines.
 
 ## What you have learned
 
-- How to build `typio-engine-basic` as a release worker executable.
+- How to build `typio-engine-basic` as a release engine executable.
 - How to run its test suite.
 - Where to place the manifest so the Typio host discovers it.
 

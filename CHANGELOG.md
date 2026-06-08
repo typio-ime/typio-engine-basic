@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Engine traffic now uses Typio Engine Protocol on the private engine fd instead
+  of the previous stdin/stdout protocol. The manifest declares
+  `protocol = "typio-engine-protocol"`.
+- `MODE` / `ACTIVE_MODE` lines now carry a trailing `salience` field after
+  `is_active`. The `compose` mode is static and Latin, so it reports `0`
+  (quiet) and stays silent on incidental focus, per the framework default.
+
 ## [0.2.0] - 2026-06-06
 
 ### Changed
 
-- **Converted the engine to a native IPC worker executable.** The package now
+- **Converted the engine to a native engine executable.** The package now
   builds `typio-engine-basic` and ships `typio-engine-basic.toml`; it no
   longer exports a C ABI `cdylib`.
 - **Adopted the private-worker package layout.** Install the worker under

@@ -6,13 +6,13 @@ Latin characters.
 
 ## Role in the ecosystem
 
-`typio-engine-basic` is a native IPC worker engine. The host discovers
-`typio-engine-basic.toml`, starts the worker command declared by that manifest,
-and exchanges line-oriented worker protocol messages over stdin/stdout.
+`typio-engine-basic` is a native Typio engine executable. The host discovers
+`typio-engine-basic.toml`, starts the engine command declared by that manifest,
+and exchanges Typio Engine Protocol frames over the private engine fd.
 
 | What | Where |
 |---|---|
-| Worker implementation | [`src/main.rs`](src/main.rs) |
+| Engine implementation | [`src/main.rs`](src/main.rs) |
 | Manifest | [`typio-engine-basic.toml`](typio-engine-basic.toml) |
 | Host framework | [`libtypio`](../libtypio) |
 
