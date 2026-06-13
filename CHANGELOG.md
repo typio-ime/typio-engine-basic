@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-13
+
+### Added
+
+- Declare supported languages in the manifest (`languages = ["en"]`) for
+  language-first switching (typio-linux ADR-0031). The legacy single
+  `language` key is kept for older hosts.
+
 ### Changed
 
 - Engine traffic now uses Typio Engine Protocol on the private engine fd instead
