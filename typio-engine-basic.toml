@@ -6,6 +6,7 @@ description = "Basic keyboard engine with Shift+Alt compose picker."
 author = "Typio"
 icon = "typio-engine-basic"
 language = "und"
+languages = ["en"]
 command = "./target/release/typio-engine-basic"
 args = []
 required = ["preedit", "candidates"]
