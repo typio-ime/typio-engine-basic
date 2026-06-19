@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-19
+
+### Changed
+
+- ADR-0001 ("Use typio-abi crate") marked **Superseded**. The engine no
+  longer ships a C ABI plugin and therefore no longer links `typio-abi`;
+  the historical decision is preserved with a supersession note pointing
+  at the current contract in `docs/explanation/typio-abi-integration.md`.
+
 ## [0.3.0] - 2026-06-13
 
 ### Added
